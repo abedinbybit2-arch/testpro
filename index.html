@@ -2317,7 +2317,7 @@ function ProfileModal({user, onClose, onPhotoUpdate}){
       await uDoc(user.uid).set({photoURL:url,updatedAt:Date.now()},{merge:true});
       setUploadProgress(100);
       setPhotoURL(url);setPreview(null);setSelectedFile(null);
-      setOk('✅ Profile photo সফলভাবে আপডেট হয়েছে!');
+      setOk('✅ Profile photo upload success!');
       onPhotoUpdate&&onPhotoUpdate(url);
     }catch(e){
       setErr('Upload ব্যর্থ হয়েছে: '+(e.message||'আবার চেষ্টা করুন'));
@@ -2341,14 +2341,14 @@ function ProfileModal({user, onClose, onPhotoUpdate}){
       // Clear Firestore
       await uDoc(user.uid).set({photoURL:null,updatedAt:Date.now()},{merge:true});
       setPhotoURL(null);setPreview(null);setSelectedFile(null);
-      setOk('✅ Photo সরিয়ে ফেলা হয়েছে।');
+      setOk('✅ Photo removed।');
       onPhotoUpdate&&onPhotoUpdate(null);
     }catch(e){setErr(e.message||'Failed to remove photo');}
     setUploading(false);
   };
 
   const handleSaveName=async()=>{
-    if(!newName.trim()){setErr('নাম লিখুন');return;}
+    if(!newName.trim()){setErr('Type your name');return;}
     setSavingName(true);setErr('');setOk('');
     try{
       await auth.currentUser.updateProfile({displayName:newName.trim()});
@@ -2507,260 +2507,8 @@ function ProfileModal({user, onClose, onPhotoUpdate}){
     </div>
   </Modal>;
 }
-
-
-// ═══════════════ VIDEO DOWNLOADER MODAL ═══════════════
-function VideoDownloaderModal({onClose}){
-  const [url,setUrl]=useState('');
-  const [quality,setQuality]=useState('720');
-  const [audioOnly,setAudioOnly]=useState(false);
-  const [loading,setLoading]=useState(false);
-  const [progress,setProgress]=useState(0);
-  const [statusMsg,setStatusMsg]=useState('');
-  const [results,setResults]=useState(null);
-  const [err,setErr]=useState('');
-  const [history,setHistory]=useState([]);
-  const [activeTab,setActiveTab]=useState('downloader');
-
-  const PLATS=[
-    {id:'tiktok', icon:'🎵',label:'TikTok',   color:'#ff0050',match:u=>u.includes('tiktok.com')||u.includes('vm.tiktok')},
-    {id:'youtube',icon:'▶️', label:'YouTube',  color:'#ff0000',match:u=>u.includes('youtube.com')||u.includes('youtu.be')},
-    {id:'ig',     icon:'📸',label:'Instagram', color:'#e1306c',match:u=>u.includes('instagram.com')},
-    {id:'twitter',icon:'🐦',label:'Twitter/X', color:'#1da1f2',match:u=>u.includes('twitter.com')||u.includes('x.com')},
-    {id:'fb',     icon:'📘',label:'Facebook',  color:'#1877f2',match:u=>u.includes('facebook.com')||u.includes('fb.watch')},
-  ];
-  const detectPlat=u=>PLATS.find(p=>p.match(u))||null;
-
-  const getSiteLinks=(videoUrl,plat)=>{
-    const links=[];
-    const isYT=plat?.id==='youtube'||!plat;
-    const isTT=plat?.id==='tiktok'||!plat;
-    const isIG=plat?.id==='ig'||!plat;
-    const isTW=plat?.id==='twitter'||!plat;
-    if(isTT){
-      links.push({name:'SnapTik.app',  desc:'TikTok — No Watermark · Best',   color:'#ff0050',url:'https://snaptik.app/',      paste:true});
-      links.push({name:'SSSTik.io',    desc:'TikTok HD · No Watermark · Fast', color:'#ff2d55',url:'https://ssstik.io/',         paste:true});
-      links.push({name:'TikMate',      desc:'TikTok MP4 + MP3 · Clean',        color:'#fe2c55',url:'https://tikmate.online/',    paste:true});
-    }
-    if(isYT){
-      links.push({name:'Y2Mate.com',   desc:'YouTube · 4K · MP3 supported',    color:'#ff0000',url:'https://www.y2mate.com/',    paste:true});
-      links.push({name:'9xBuddy.org',  desc:'YouTube — Fast, no signup',       color:'#e53935',url:'https://9xbuddy.org/',       paste:true});
-      links.push({name:'SaveFrom.net', desc:'YouTube + Facebook + Insta',      color:'#1a73e8',url:'https://en.savefrom.net/',   paste:true});
-    }
-    if(isIG){
-      links.push({name:'Instafinsta',  desc:'Reels · Stories · Posts',         color:'#e1306c',url:'https://instafinsta.com/',  paste:true});
-    }
-    if(isTW){
-      links.push({name:'TWSave.com',   desc:'Twitter/X Video Downloader',      color:'#1da1f2',url:'https://twsave.com/',        paste:true});
-    }
-    links.push({name:'Cobalt.tools',   desc:'All Platforms · Best · No Ads',   color:'#7c3aed',url:'https://cobalt.tools/',      paste:true});
-    return links;
-  };
-
-  const tryCobalt=async(videoUrl,qual,ao)=>{
-    const instances=['https://api.cobalt.tools/','https://cobalt.api.timelessnesses.me/'];
-    for(const ep of instances){
-      try{
-        const r=await fetch(ep,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({url:videoUrl,videoQuality:qual,isAudioOnly:ao,disableMetadata:false}),signal:AbortSignal.timeout(12000)});
-        if(!r.ok)continue;
-        const d=await r.json();
-        if(d.status==='error'||!d.url)continue;
-        return d;
-      }catch{}
-    }
-    throw new Error('API unavailable');
-  };
-
-  const handleUrlChange=v=>{setUrl(v);setErr('');setResults(null);setStatusMsg('');};
-
-  const download=async()=>{
-    const t=url.trim();
-    if(!t){setErr('Video URL পেস্ট করুন');return;}
-    if(!t.startsWith('http')){setErr('https:// দিয়ে শুরু হওয়া পূর্ণ URL দিন');return;}
-    setLoading(true);setErr('');setResults(null);setProgress(10);setStatusMsg('API তে সংযোগ করা হচ্ছে...');
-    const piv=setInterval(()=>setProgress(p=>Math.min(p+5,85)),500);
-    const plat=detectPlat(t);
-    try{
-      setStatusMsg('Cobalt API চেষ্টা করা হচ্ছে...');
-      const d=await tryCobalt(t,quality,audioOnly);
-      clearInterval(piv);setProgress(100);
-      const fname=d.filename||`video_${Date.now()}.${audioOnly?'mp3':'mp4'}`;
-      const links=[];
-      if(d.url)links.push({label:audioOnly?'🎵 MP3 Audio':`🎬 Video ${quality}p`,url:d.url,filename:fname,primary:true});
-      if(d.picker?.length)d.picker.forEach((p,i)=>links.push({label:`📎 Item ${i+1}`,url:p.url,filename:`item_${i+1}_${Date.now()}.mp4`,primary:false}));
-      setResults({links,siteLinks:getSiteLinks(t,plat),apiOk:true});
-      setHistory(h=>[{url:t,plat:plat?.id,time:Date.now()},...h].slice(0,8));
-    }catch{
-      clearInterval(piv);setProgress(0);
-      setResults({links:[],siteLinks:getSiteLinks(t,plat),apiOk:false});
-      setHistory(h=>[{url:t,plat:plat?.id,time:Date.now()},...h].slice(0,8));
-    }
-    setLoading(false);setStatusMsg('');setTimeout(()=>setProgress(0),2000);
-  };
-
-  const triggerDL=async(dlUrl,fname)=>{
-    try{
-      const r=await fetch(dlUrl);
-      if(r.ok){const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=fname;document.body.appendChild(a);a.click();document.body.removeChild(a);return;}
-    }catch{}
-    window.open(dlUrl,'_blank','noopener,noreferrer');
-  };
-
-  const plat=detectPlat(url);
-  const qualOpts=['2160','1440','1080','720','480','360'];
-
-  return <Modal onClose={onClose} title="Video Downloader" icon="⬇️" grad="from-violet-900 via-purple-800 to-indigo-900" wide>
-    <div className="space-y-4">
-      <div className="flex gap-1 border-b border-white/8">
-        {[['downloader','⬇️ Downloader'],['sites','🌐 Download Sites']].map(([id,lb])=>(
-          <button key={id} onClick={()=>setActiveTab(id)}
-            className={`px-4 py-2.5 text-sm font-semibold transition-all ${activeTab===id?'border-b-2 border-violet-500 text-violet-300':'text-slate-500 hover:text-slate-300'}`}>{lb}</button>
-        ))}
-      </div>
-
-      {activeTab==='downloader'&&<>
-        <div className="flex flex-wrap gap-1.5">
-          {PLATS.map(p=>(
-            <span key={p.id} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border"
-              style={{background:p.color+'15',borderColor:p.color+'35',color:p.color}}>{p.icon} {p.label}</span>
-          ))}
-        </div>
-        {plat&&url&&<div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border" style={{background:plat.color+'12',borderColor:plat.color+'40'}}>
-          <span className="text-xl">{plat.icon}</span>
-          <div><p className="text-sm font-bold text-white">{plat.label} লিঙ্ক শনাক্ত</p><p className="text-xs opacity-60">Watermark-free possible</p></div>
-          <span className="ml-auto text-xs px-2 py-1 rounded-full font-bold" style={{background:plat.color+'30',color:plat.color}}>✓</span>
-        </div>}
-        <div>
-          <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 block">Video URL</label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <input value={url} onChange={e=>handleUrlChange(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!loading&&download()}
-                placeholder="https://www.tiktok.com/... অথবা youtube.com/..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3.5 text-sm text-slate-200 placeholder-slate-600 focus:border-violet-500 transition-colors pr-10"/>
-              {url&&<button onClick={()=>handleUrlChange('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-white text-xl">×</button>}
-            </div>
-            <button onClick={download} disabled={loading||!url.trim()}
-              className="btn-vid text-white font-bold px-5 py-3.5 rounded-xl text-sm flex items-center gap-2 flex-shrink-0 disabled:opacity-40">
-              {loading?<><span className="spin inline-block">⏳</span>Loading...</>:<>⬇️ Download</>}
-            </button>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">Quality</label>
-            <div className="flex gap-1.5 flex-wrap">
-              {qualOpts.map(q=>(
-                <button key={q} onClick={()=>setQuality(q)} disabled={audioOnly}
-                  className={`text-xs px-3 py-2 rounded-xl border font-semibold transition-all ${quality===q&&!audioOnly?'bg-violet-500/25 border-violet-500/60 text-violet-200':'bg-white/5 border-white/8 text-slate-500 hover:text-slate-300 disabled:opacity-30'}`}>{q}p</button>
-              ))}
-            </div>
-          </div>
-          <button onClick={()=>setAudioOnly(a=>!a)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold transition-all ${audioOnly?'bg-emerald-500/20 border-emerald-500/50 text-emerald-300':'bg-white/5 border-white/10 text-slate-400 hover:text-white'}`}>
-            🎵 {audioOnly?'Audio ON':'Audio Only'}
-          </button>
-        </div>
-        {(loading||progress>0)&&<div className="space-y-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-violet-400 font-medium animate-pulse">{statusMsg||'Processing...'}</span>
-            <span className="text-slate-500">{Math.round(progress)}%</span>
-          </div>
-          <div className="progress-bar"><div className="progress-fill" style={{width:progress+'%'}}/></div>
-        </div>}
-        {err&&<div className="bg-red-500/8 border border-red-500/25 rounded-xl p-3 text-sm text-red-300">⚠️ {err}</div>}
-        {results&&<div className="space-y-4 fu">
-          {results.links.length>0&&<div className="space-y-2">
-            <p className="text-xs font-bold text-green-400 uppercase tracking-widest">✅ Download Ready</p>
-            {results.links.map((lnk,i)=>(
-              <button key={i} onClick={()=>triggerDL(lnk.url,lnk.filename)}
-                className={`w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl border transition-all hover:scale-[1.01] ${lnk.primary?'bg-violet-500/15 border-violet-500/40':'bg-white/5 border-white/10'}`}>
-                <div className="flex items-center gap-2.5">
-                  <span className="text-lg">{lnk.label.includes('MP3')?'🎵':'🎬'}</span>
-                  <div className="text-left"><p className="text-sm font-bold text-white">{lnk.label}</p><p className="mono text-xs text-slate-500 truncate max-w-[200px]">{lnk.filename}</p></div>
-                </div>
-                <span className="text-violet-300 font-bold">⬇️ Save</span>
-              </button>
-            ))}
-          </div>}
-          {results.siteLinks?.length>0&&<div className="space-y-2">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {!results.apiOk?'⚡ API কাজ করেনি — এখানে URL Paste করুন':'🌐 Alternative Sites'}
-            </p>
-            {!results.apiOk&&<div className="bg-amber-500/8 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300">
-              নিচের যেকোনো site এ গিয়ে URL paste করুন — ১০০% কাজ করবে।
-            </div>}
-            {results.siteLinks.map((s,i)=>(
-              <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all hover:scale-[1.005] group"
-                style={{background:s.color+'10',borderColor:s.color+'30'}}>
-                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:s.color}}/>
-                <div className="flex-1 min-w-0"><p className="text-sm font-bold text-white">{s.name}</p><p className="text-xs opacity-50">{s.desc}</p></div>
-                {s.paste&&url&&<button onClick={e=>{e.preventDefault();cp(url);}} className="text-xs bg-white/10 hover:bg-white/20 text-slate-300 px-2 py-1 rounded-lg mr-1 transition-all flex-shrink-0">📋 Copy URL</button>}
-                <span className="text-xs text-slate-600 group-hover:text-white transition-colors flex-shrink-0">↗</span>
-              </a>
-            ))}
-            {url&&<div className="bg-white/3 border border-white/8 rounded-xl p-3">
-              <p className="text-xs text-slate-500 mb-1.5">আপনার URL — copy করে site এ paste করুন:</p>
-              <div className="flex items-center gap-2">
-                <p className="mono text-xs text-violet-300 truncate flex-1">{url}</p>
-                <button onClick={()=>cp(url)} className="flex-shrink-0 text-xs bg-violet-500/20 border border-violet-500/30 text-violet-300 px-3 py-1.5 rounded-lg hover:bg-violet-500/30 font-semibold">📋 Copy</button>
-              </div>
-            </div>}
-          </div>}
-        </div>}
-        {history.length>0&&<div>
-          <p className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Recent</p>
-          <div className="space-y-1">
-            {history.map((h,i)=>{const p=PLATS.find(x=>x.id===h.plat);return(
-              <div key={i} onClick={()=>handleUrlChange(h.url)} className="flex items-center gap-2 px-3 py-2 bg-white/3 border border-white/5 rounded-xl cursor-pointer hover:bg-white/5 transition-all">
-                <span>{p?.icon||'🎬'}</span>
-                <span className="text-xs text-slate-500 truncate flex-1">{h.url.slice(0,55)}...</span>
-                <span className="text-xs text-slate-700 flex-shrink-0">{new Date(h.time).toLocaleTimeString()}</span>
-              </div>
-            );})}
-          </div>
-        </div>}
-      </>}
-
-      {activeTab==='sites'&&<div className="space-y-3">
-        <p className="text-sm text-slate-400">এই sites এ URL paste করলেই download হবে — সব free, no account.</p>
-        {[
-          {cat:'🎵 TikTok',color:'#ff0050',sites:[
-            {name:'SnapTik.app',desc:'No watermark HD · Best TikTok DL',url:'https://snaptik.app/'},
-            {name:'SSSTik.io', desc:'TikTok HD No Watermark · Fast',    url:'https://ssstik.io/'},
-            {name:'TikMate',   desc:'MP4 + MP3 · Multiple formats',     url:'https://tikmate.online/'},
-          ]},
-          {cat:'▶️ YouTube',color:'#ff0000',sites:[
-            {name:'Y2Mate.com',  desc:'144p থেকে 4K · MP3 supported',    url:'https://www.y2mate.com/'},
-            {name:'9xBuddy.org', desc:'Fast · No signup required',       url:'https://9xbuddy.org/'},
-            {name:'SaveFrom.net',desc:'YouTube + Facebook + Instagram',  url:'https://en.savefrom.net/'},
-          ]},
-          {cat:'📸 Instagram',color:'#e1306c',sites:[
-            {name:'Instafinsta',desc:'Reels · Stories · Posts · IGTV', url:'https://instafinsta.com/'},
-            {name:'InflactDL', desc:'Instagram HD Downloader',          url:'https://inflact.com/downloader/instagram/'},
-          ]},
-          {cat:'🌐 All Platforms',color:'#7c3aed',sites:[
-            {name:'Cobalt.tools',desc:'TikTok · YouTube · Insta · Twitter · Reddit + আরো',url:'https://cobalt.tools/'},
-          ]},
-        ].map(({cat,color,sites})=>(
-          <div key={cat} className="space-y-1.5">
-            <p className="text-xs font-bold uppercase tracking-widest" style={{color}}>{cat}</p>
-            {sites.map(s=>(
-              <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all hover:scale-[1.005] group"
-                style={{background:color+'10',borderColor:color+'30'}}>
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:color}}/>
-                <div className="flex-1"><p className="text-sm font-bold text-white">{s.name}</p><p className="text-xs opacity-50">{s.desc}</p></div>
-                <span className="text-xs text-slate-600 group-hover:text-white transition-colors">↗ Open</span>
-              </a>
-            ))}
-          </div>
-        ))}
-      </div>}
-    </div>
-  </Modal>;
-}
-
+      
+    
 // ═══════════════ MAIN APP ═══════════════
 function App(){
   const [dark,setDark]=useState(true);const [price,setPrice]=useState(null);
